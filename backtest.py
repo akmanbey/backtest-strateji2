@@ -42,7 +42,6 @@ async def login(context):
     print("Cookie eklendi ✅")
 
 async def wait_for_report(page):
-    """Rapor hesaplanana kadar bekle, max 3 dakika"""
     try:
         await page.wait_for_selector(
             'text="Rapor güncelleniyor"',
@@ -99,17 +98,6 @@ async def change_symbol(page, symbol):
     except Exception as e:
         print(f"  Sembol hatası: {e}")
 
-def extract_percent(value_str):
-    """Değer stringinden % değerini çıkar. Örn: '+2,65 USDT +0,13%' → '+0,13%'"""
-    if not value_str or value_str == "N/A":
-        return value_str
-    # % işareti içeren kısmı bul
-    parts = value_str.split()
-    for part in parts:
-        if "%" in part:
-            return part.replace("%", "").strip()
-    return value_str
-
 async def get_results(page):
     res = {
         "net_profit":   "N/A",
@@ -127,15 +115,14 @@ async def get_results(page):
 
         for j, line in enumerate(lines):
             if "Toplam K&Z" in line or "Net Profit" in line:
-                if j+1 < len(lines):
-                    res["net_profit"] = extract_percent(lines[j+1])
+                if j+3 < len(lines):
+                    res["net_profit"] = lines[j+3].replace("%", "").strip()
             if "Maksimum öz sermaye" in line or "Max Drawdown" in line:
-                if j+1 < len(lines):
-                    res["max_drawdown"] = extract_percent(lines[j+1])
+                if j+3 < len(lines):
+                    res["max_drawdown"] = lines[j+3].replace("%", "").strip()
             if "Karlı işlemler" in line or "Percent Profitable" in line:
                 if j+1 < len(lines):
                     val = lines[j+1]
-                    # "82,08% 458/558" formatından sadece % al
                     res["win_rate"] = val.split()[0].replace("%", "") if val != "N/A" else val
             if "Toplam işlemler" in line or "Total Trades" in line:
                 if j+1 < len(lines):
@@ -201,21 +188,21 @@ async def main():
                     await page.screenshot(path="results/backtest_data.png")
 
                 all_results.append({
-                    "Sembol":       clean,
-                    "Net Kar %":    res["net_profit"],
+                    "Sembol":         clean,
+                    "Net Kar %":      res["net_profit"],
                     "Max Drawdown %": res["max_drawdown"],
-                    "Win Rate %":   res["win_rate"],
-                    "İşlem Sayısı": res["trades"],
+                    "Win Rate %":     res["win_rate"],
+                    "İşlem Sayısı":   res["trades"],
                 })
                 print(f"  ✅ Kar:{res['net_profit']} | DD:{res['max_drawdown']} | Win:{res['win_rate']}")
             except Exception as e:
                 print(f"  ❌ {e}")
                 all_results.append({
-                    "Sembol":       clean,
-                    "Net Kar %":    "HATA",
+                    "Sembol":         clean,
+                    "Net Kar %":      "HATA",
                     "Max Drawdown %": "HATA",
-                    "Win Rate %":   "HATA",
-                    "İşlem Sayısı": "HATA",
+                    "Win Rate %":     "HATA",
+                    "İşlem Sayısı":   "HATA",
                 })
             if (i + 1) % 20 == 0:
                 save_csv(all_results)
