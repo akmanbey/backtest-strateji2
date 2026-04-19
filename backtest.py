@@ -113,20 +113,31 @@ async def get_results(page):
         lines = [l.strip() for l in all_text.split('\n') if l.strip()]
         print(f"  Sayfa metni: {lines[:60]}")
 
+        # Son eşleşmeyi bul — strateji raporu sayfanın sonunda
+        last_kar_idx = None
+        last_dd_idx = None
+        last_win_idx = None
+        last_trades_idx = None
+
         for j, line in enumerate(lines):
             if "Toplam K&Z" in line or "Net Profit" in line:
-                if j+3 < len(lines):
-                    res["net_profit"] = lines[j+3].replace("%", "").strip()
+                last_kar_idx = j
             if "Maksimum öz sermaye" in line or "Max Drawdown" in line:
-                if j+3 < len(lines):
-                    res["max_drawdown"] = lines[j+3].replace("%", "").strip()
+                last_dd_idx = j
             if "Karlı işlemler" in line or "Percent Profitable" in line:
-                if j+1 < len(lines):
-                    val = lines[j+1]
-                    res["win_rate"] = val.split()[0].replace("%", "") if val != "N/A" else val
+                last_win_idx = j
             if "Toplam işlemler" in line or "Total Trades" in line:
-                if j+1 < len(lines):
-                    res["trades"] = lines[j+1]
+                last_trades_idx = j
+
+        if last_kar_idx and last_kar_idx+3 < len(lines):
+            res["net_profit"] = lines[last_kar_idx+3].replace("%", "").strip()
+        if last_dd_idx and last_dd_idx+3 < len(lines):
+            res["max_drawdown"] = lines[last_dd_idx+3].replace("%", "").strip()
+        if last_win_idx and last_win_idx+1 < len(lines):
+            val = lines[last_win_idx+1]
+            res["win_rate"] = val.split()[0].replace("%", "") if val != "N/A" else val
+        if last_trades_idx and last_trades_idx+1 < len(lines):
+            res["trades"] = lines[last_trades_idx+1]
 
     except Exception as e:
         print(f"  Veri hatası: {e}")
