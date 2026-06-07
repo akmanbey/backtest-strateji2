@@ -121,8 +121,8 @@ async def set_all_history(page):
     await asyncio.sleep(0.5)
 
 async def get_report_values(page):
-    result = await page.evaluate(
-        """() => {
+    result = await page.evaluate("""
+        () => {
             const res = {net_profit: 'N/A', max_drawdown: 'N/A', win_rate: 'N/A', trades: 'N/A'};
             let panel = null;
             for (const sel of ['[class*="backtesting"]', '[class*="strategyReport"]', '[class*="report"]']) {
@@ -131,56 +131,57 @@ async def get_report_values(page):
             }
             if (!panel) panel = document.body;
             const lines = panel.innerText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+            function getPct(v) {
+                const parts = v.split(' ');
+                for (const p of parts) {
+                    if (p.includes('%')) return p.replace('%','').replace(',','.').replace('\u2212','-').replace('-','-');
+                }
+                return null;
+            }
+
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i];
                 if (res.net_profit === 'N/A' && (line.includes('Total PnL') || line.includes('Toplam K'))) {
                     for (let o = 1; o <= 5; o++) {
                         if (i+o >= lines.length) break;
-                        const v = lines[i+o];
-                        if (v.includes('%')) {
-                            for (const p of v.split(/\s+/)) {
-                                if (p.includes('%')) { res.net_profit = p.replace('%','').replace(',','.').replace('\u2212','-'); break; }
-                            }
-                            break;
-                        }
+                        const pct = getPct(lines[i+o]);
+                        if (pct !== null) { res.net_profit = pct; break; }
                     }
                 }
                 if (res.max_drawdown === 'N/A' && (line.includes('Max drawdown') || line.includes('Maksimum'))) {
                     for (let o = 1; o <= 5; o++) {
                         if (i+o >= lines.length) break;
-                        const v = lines[i+o];
-                        if (v.includes('%')) {
-                            for (const p of v.split(/\s+/)) {
-                                if (p.includes('%')) { res.max_drawdown = p.replace('%','').replace(',','.').replace('\u2212','-'); break; }
-                            }
-                            break;
-                        }
+                        const pct = getPct(lines[i+o]);
+                        if (pct !== null) { res.max_drawdown = pct; break; }
                     }
                 }
-                if ((res.win_rate === 'N/A' || res.trades === 'N/A') && line.includes('Karl\u0131 i\u015flemler')) {
-                    for (let o = 1; o <= 6; o++) {
-                        if (i+o >= lines.length) break;
-                        const v = lines[i+o];
-                        if (v.includes('%') && res.win_rate === 'N/A') {
-                            for (const p of v.split(/\s+/)) {
-                                if (p.includes('%')) { res.win_rate = p.replace('%','').replace(',','.'); break; }
+                if ((res.win_rate === 'N/A' || res.trades === 'N/A') && line.includes('Karl')) {
+                    if (line.includes('lemler') || line.includes('Percent')) {
+                        for (let o = 1; o <= 6; o++) {
+                            if (i+o >= lines.length) break;
+                            const v = lines[i+o];
+                            if (v.includes('%') && res.win_rate === 'N/A') {
+                                const pct = getPct(v);
+                                if (pct !== null) res.win_rate = pct;
                             }
-                        }
-                        if (v.includes('/') && res.trades === 'N/A') {
-                            for (const p of v.split(/\s+/)) {
-                                if (p.includes('/')) {
-                                    const total = p.split('/').pop();
-                                    if (/^\d+$/.test(total)) { res.trades = total; break; }
+                            if (v.includes('/') && res.trades === 'N/A') {
+                                const parts = v.split(' ');
+                                for (const p of parts) {
+                                    if (p.includes('/')) {
+                                        const total = p.split('/').pop();
+                                        if (total && total.length > 0 && !isNaN(total)) { res.trades = total; break; }
+                                    }
                                 }
                             }
+                            if (res.win_rate !== 'N/A' && res.trades !== 'N/A') break;
                         }
-                        if (res.win_rate !== 'N/A' && res.trades !== 'N/A') break;
                     }
                 }
             }
             return res;
-        }"""
-    )
+        }
+    """)
     return result
 
 def save_csv(data):
