@@ -119,26 +119,29 @@ async def set_all_history(page):
         print("  ⚠️ Tarih butonu bulunamadı, devam ediliyor")
         return
 
-    # 2) Dropdown'dan "Tüm geçmiş" veya "All" seç
+    # 2) Dropdown'dan "Tüm geçmiş" seç — bu seçilince TradingView otomatik DEEP'e geçer
     all_history_texts = [
-        'Tüm geçmiş', 'Tüm Geçmiş', 'All history', 'All History', 'All', 'Max', 'Tümü'
+        'Tüm geçmiş', 'Tüm Geçmiş', 'All history', 'All History', 'Max', 'All', 'Tümü'
     ]
     for text in all_history_texts:
         try:
-            # Dropdown item'ları için çeşitli selector'lar
+            # Exact text match — has-text yerine filter ile
             for item_sel in [
-                f'[role="option"]:has-text("{text}")',
-                f'[role="menuitem"]:has-text("{text}")',
-                f'li:has-text("{text}")',
-                f'div[class*="item"]:has-text("{text}")',
-                f'span:has-text("{text}")',
+                f'[role="option"]',
+                f'[role="menuitem"]',
+                f'li',
+                f'div[class*="item"]',
             ]:
-                item = page.locator(item_sel).first
-                if await item.count() > 0:
-                    await item.click(timeout=3000)
-                    await asyncio.sleep(2)
-                    print(f'  "{text}" seçildi ✅')
-                    return
+                items = page.locator(item_sel).filter(has_text=text)
+                count = await items.count()
+                for idx in range(count):
+                    item = items.nth(idx)
+                    item_text = await item.inner_text()
+                    if item_text.strip() == text:
+                        await item.click(timeout=3000)
+                        await asyncio.sleep(2)
+                        print(f'  "{text}" seçildi ✅')
+                        return
         except:
             continue
 
@@ -146,7 +149,7 @@ async def set_all_history(page):
     try:
         await page.evaluate("""
             () => {
-                const keywords = ['Tüm geçmiş', 'All history', 'All', 'Max', 'Tümü'];
+                const keywords = ['Tüm geçmiş', 'Tüm Geçmiş', 'All history', 'All History', 'Max', 'All', 'Tümü'];
                 const allEls = Array.from(document.querySelectorAll('[role="option"], [role="menuitem"], li, div'));
                 for (const kw of keywords) {
                     const el = allEls.find(e => e.innerText && e.innerText.trim() === kw);
