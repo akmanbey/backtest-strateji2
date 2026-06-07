@@ -63,6 +63,140 @@ async def wait_for_report(page, label=""):
 
 async def set_all_history(page):
     """
+    Tarih butonunu Playwright ile bul ve tıkla, dropdown'dan 'Tüm geçmiş' seç.
+    """
+    # Strateji paneli içindeki tarih butonunu bul
+    date_btn = None
+    for panel_sel in ['[class*="backtesting"]', '[class*="strategyReport"]', '[class*="report"]']:
+        try:
+            panel = page.locator(panel_sel).first
+            if await panel.count() == 0:
+                continue
+            btns = panel.locator('button')
+            n = await btns.count()
+            for idx in range(n):
+                btn = btns.nth(idx)
+                try:
+                    t = (await btn.inner_text(timeout=1000)).strip()
+                    if ('—' in t or '2024' in t or '2025' in t or '2026' in t) and len(t) < 80:
+                        date_btn = btn
+                        print(f"  Tarih butonu: {t[:50]}")
+                        break
+                except:
+                    continue
+            if date_btn:
+                break
+        except:
+            continue
+
+    if not date_btn:
+        print("  ⚠️ Tarih butonu bulunamadı")
+        return
+
+    # Playwright'ın gerçek mouse click'i ile tıkla
+    await date_btn.click(force=True, timeout=5000)
+    await asyncio.sleep(2)
+
+    # Dropdown'dan "Tüm geçmiş" seç — görünür elementleri Playwright ile tara
+    targets = ['Tüm geçmiş', 'Tüm Geçmiş', 'All history', 'All History']
+    for target in targets:
+        try:
+            item = page.get_by_text(target, exact=True)
+            if await item.count() > 0:
+                await item.first.click(timeout=3000)
+                await asyncio.sleep(2)
+                print(f'  "{target}" seçildi ✅')
+                return
+        except:
+            continue
+
+    # Fallback: görünür li elementlerini tara
+    try:
+        lis = page.locator('li')
+        n = await lis.count()
+        for idx in range(n):
+            li = lis.nth(idx)
+            try:
+                t = (await li.inner_text(timeout=500)).strip()
+                if t in targets:
+                    await li.click(timeout=2000)
+                    await asyncio.sleep(2)
+                    print(f'  "{t}" li ile seçildi ✅')
+                    return
+            except:
+                continue
+    except:
+        pass
+
+    print("  ⚠️ Tüm geçmiş seçilemedi — dropdown kapıtılıyor")
+    await page.keyboard.press("Escape")
+    await asyncio.sleep(0.5)
+
+import asyncio
+import csv
+import os
+from playwright.async_api import async_playwright
+
+TV_SESSIONID      = os.environ["TV_SESSIONID"]
+TV_SESSIONID_SIGN = os.environ["TV_SESSIONID_SIGN"]
+CHART_URL         = os.environ["TV_CHART_URL"]
+OUTPUT_FILE       = "results/backtest_sonuclari.csv"
+
+def load_symbols():
+    symbols = []
+    with open("symbols.txt") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                symbols.append(line)
+    return symbols
+
+async def login(context):
+    await context.add_cookies([
+        {"name": "sessionid",      "value": TV_SESSIONID,      "domain": ".tradingview.com", "path": "/", "secure": True, "httpOnly": True, "sameSite": "None"},
+        {"name": "sessionid_sign", "value": TV_SESSIONID_SIGN, "domain": ".tradingview.com", "path": "/", "secure": True, "httpOnly": True, "sameSite": "None"}
+    ])
+    print("Cookie eklendi ✅")
+
+async def close_any_dropdown(page):
+    """Açık dropdown varsa Escape ile kapat."""
+    try:
+        await page.keyboard.press("Escape")
+        await asyncio.sleep(0.5)
+    except:
+        pass
+
+async def change_symbol(page, symbol):
+    search_term = symbol.split(":")[-1]
+    # Önce açık dropdown varsa kapat
+    await close_any_dropdown(page)
+    try:
+        await page.click('[id="header-toolbar-symbol-search"]', timeout=8000)
+        await asyncio.sleep(0.5)
+        await page.keyboard.press("Control+A")
+        await page.keyboard.type(search_term, delay=40)
+        await asyncio.sleep(1.5)
+        await page.keyboard.press("Enter")
+        await asyncio.sleep(4)
+        print(f"  Sembol değiştirildi: {search_term}")
+    except Exception as e:
+        print(f"  Sembol hatası: {e}")
+
+async def wait_for_report(page, label=""):
+    """Strateji raporunun yüklenmesini bekle."""
+    # "Key stats" veya "Total PnL" görünene kadar bekle
+    for selector in ['text="Key stats"', 'text="Total PnL"', 'text="Karlı işlemler"']:
+        try:
+            await page.wait_for_selector(selector, timeout=20000)
+            print(f"  Rapor yüklendi ✅ {label}")
+            return True
+        except:
+            continue
+    print(f"  ⚠️ Rapor yüklenemedi {label}")
+    return False
+
+async def set_all_history(page):
+    """
     Tarih butonunu bul, tıkla, 'Tüm geçmiş' seç.
     Strateji paneli screenshot'tan: takvim ikonu yanında tarih metni olan buton.
     """
