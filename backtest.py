@@ -98,6 +98,12 @@ async def set_all_history(page):
     await page.mouse.up()
     await asyncio.sleep(2)
 
+    # Debug: ilk sembol için screenshot al
+    try:
+        await page.screenshot(path="results/dropdown_debug.png")
+    except:
+        pass
+
     # Dropdown açıldı mı kontrol et
     targets = ['Tüm geçmiş', 'Tüm Geçmiş', 'All history', 'All History']
     for target in targets:
@@ -376,7 +382,17 @@ async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-blink-features=AutomationControlled"]
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled",
+                "--disable-web-security",
+                "--disable-features=IsolateOrigins,site-per-process",
+                "--window-size=1920,1080",
+                # Headless detection bypass
+                "--disable-headless-mode",
+            ]
         )
         context = await browser.new_context(
             viewport={"width": 1920, "height": 1080},
