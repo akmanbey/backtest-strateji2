@@ -63,48 +63,42 @@ async def wait_for_report(page, label=""):
 
 async def set_all_history(page):
     """
-    Tarih butonunu bul, dispatch events ile tıkla, dropdown'dan 'Tüm geçmiş' seç.
+    Tarih butonunu bul, scroll into view yap, tam ortasına mouse click at.
     """
-    # Butonu bul ve dispatch ile tıkla (tooltip değil dropdown açmak için)
-    clicked = await page.evaluate("""
+    # Butonu bul, scroll et, koordinatları al
+    btn_rect = await page.evaluate("""
         () => {
-            function dispatch(el) {
-                el.dispatchEvent(new MouseEvent('mousedown', {bubbles:true, cancelable:true}));
-                el.dispatchEvent(new MouseEvent('mouseup',   {bubbles:true, cancelable:true}));
-                el.dispatchEvent(new MouseEvent('click',     {bubbles:true, cancelable:true}));
-            }
             const panels = document.querySelectorAll('[class*="backtesting"], [class*="strategyReport"], [class*="report"]');
             for (const panel of panels) {
-                const btns = panel.querySelectorAll('button');
-                for (const btn of btns) {
+                for (const btn of panel.querySelectorAll('button')) {
                     const t = btn.innerText || '';
                     if (t.includes('\u2014') && /\d{4}/.test(t) && t.length < 80) {
-                        dispatch(btn);
-                        return t.trim().slice(0, 50);
+                        btn.scrollIntoView({block: 'center', inline: 'center'});
+                        const r = btn.getBoundingClientRect();
+                        return {x: Math.round(r.left + r.width/2), y: Math.round(r.top + r.height/2), text: t.trim().slice(0,50), w: r.width, h: r.height};
                     }
-                }
-            }
-            // Fallback
-            const allBtns = document.querySelectorAll('button');
-            for (const btn of allBtns) {
-                const t = btn.innerText || '';
-                if (t.includes('\u2014') && /\d{4}/.test(t) && t.length < 80) {
-                    dispatch(btn);
-                    return t.trim().slice(0, 50);
                 }
             }
             return null;
         }
     """)
 
-    if not clicked:
+    if not btn_rect:
         print("  ⚠️ Tarih butonu bulunamadı")
         return
 
-    print(f"  Tarih butonu dispatch edildi: {clicked}")
+    print(f"  Tarih butonu: {btn_rect['text']} @ ({btn_rect['x']},{btn_rect['y']}) size:{btn_rect['w']}x{btn_rect['h']}")
+    await asyncio.sleep(0.5)
+
+    # Tam ortasına tıkla
+    await page.mouse.move(btn_rect['x'], btn_rect['y'])
+    await asyncio.sleep(0.3)
+    await page.mouse.down()
+    await asyncio.sleep(0.1)
+    await page.mouse.up()
     await asyncio.sleep(2)
 
-    # Dropdown'dan "Tüm geçmiş" seç
+    # Dropdown açıldı mı kontrol et
     targets = ['Tüm geçmiş', 'Tüm Geçmiş', 'All history', 'All History']
     for target in targets:
         try:
@@ -117,7 +111,7 @@ async def set_all_history(page):
         except:
             continue
 
-    # Görünür li elementleri
+    # Görünür li'leri logla
     found_texts = []
     try:
         lis = page.locator('li')
@@ -125,20 +119,20 @@ async def set_all_history(page):
         for idx in range(n):
             li = lis.nth(idx)
             try:
-                t = (await li.inner_text(timeout=500)).strip()
-                if t:
-                    found_texts.append(t[:30])
+                t = (await li.inner_text(timeout=300)).strip()
+                if t and len(t) < 40:
+                    found_texts.append(t)
                 if t in targets:
                     await li.click(timeout=2000)
                     await asyncio.sleep(2)
-                    print(f'  "{t}" li ile seçildi ✅')
+                    print(f'  "{t}" seçildi ✅')
                     return
             except:
                 continue
     except:
         pass
 
-    print(f"  ⚠️ Dropdown açılmadı. li'ler: {found_texts[:8]}")
+    print(f"  ⚠️ Dropdown açılmadı. li'ler: {found_texts[:10]}")
     await page.keyboard.press("Escape")
     await asyncio.sleep(0.5)
 
