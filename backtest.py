@@ -279,7 +279,16 @@ async def main():
                     await asyncio.sleep(2)
                     await wait_for_report(page, "(tüm geçmiş)")
 
+                # Önceki sembolün değerinden farklı gelene kadar bekle (duplicate önleme)
+                prev_val = all_results[-1]["Net Kar %"] if all_results else None
                 res = await get_report_values(page)
+                retry = 0
+                while res["net_profit"] != "N/A" and res["net_profit"] == prev_val and retry < 5:
+                    print(f"  ⏳ Duplicate tespit edildi ({res['net_profit']}), 3s bekleniyor...")
+                    await asyncio.sleep(3)
+                    res = await get_report_values(page)
+                    retry += 1
+
                 all_results.append({
                     "Sembol":         clean,
                     "Net Kar %":      res["net_profit"],
