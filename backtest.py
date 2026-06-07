@@ -121,68 +121,58 @@ async def set_all_history(page):
     await asyncio.sleep(0.5)
 
 async def get_report_values(page):
-    result = await page.evaluate("""
-        () => {
-            const res = {net_profit: 'N/A', max_drawdown: 'N/A', win_rate: 'N/A', trades: 'N/A'};
-            let panel = null;
-            for (const sel of ['[class*="backtesting"]', '[class*="strategyReport"]', '[class*="report"]']) {
-                const el = document.querySelector(sel);
-                if (el && el.innerText && el.innerText.length > 100) { panel = el; break; }
-            }
-            if (!panel) panel = document.body;
-            const lines = panel.innerText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    # Panelin innerText'ini Python'a al, parse et
+    text = None
+    for sel in ['[class*="backtesting"]', '[class*="strategyReport"]', '[class*="report"]']:
+        try:
+            el = page.locator(sel).first
+            if await el.count() > 0:
+                t = await el.inner_text()
+                if t and len(t) > 100:
+                    text = t
+                    break
+        except:
+            continue
+    if not text:
+        text = await page.evaluate("() => document.body.innerText")
 
-            function getPct(v) {
-                const parts = v.split(' ');
-                for (const p of parts) {
-                    if (p.includes('%')) return p.replace('%','').replace(',','.').replace('\u2212','-').replace('-','-');
-                }
-                return null;
-            }
+    res = {"net_profit": "N/A", "max_drawdown": "N/A", "win_rate": "N/A", "trades": "N/A"}
+    lines = [l.strip() for l in text.split("\n") if l.strip()]
 
-            for (let i = 0; i < lines.length; i++) {
-                const line = lines[i];
-                if (res.net_profit === 'N/A' && (line.includes('Total PnL') || line.includes('Toplam K'))) {
-                    for (let o = 1; o <= 5; o++) {
-                        if (i+o >= lines.length) break;
-                        const pct = getPct(lines[i+o]);
-                        if (pct !== null) { res.net_profit = pct; break; }
-                    }
-                }
-                if (res.max_drawdown === 'N/A' && (line.includes('Max drawdown') || line.includes('Maksimum'))) {
-                    for (let o = 1; o <= 5; o++) {
-                        if (i+o >= lines.length) break;
-                        const pct = getPct(lines[i+o]);
-                        if (pct !== null) { res.max_drawdown = pct; break; }
-                    }
-                }
-                if ((res.win_rate === 'N/A' || res.trades === 'N/A') && line.includes('Karl')) {
-                    if (line.includes('lemler') || line.includes('Percent')) {
-                        for (let o = 1; o <= 6; o++) {
-                            if (i+o >= lines.length) break;
-                            const v = lines[i+o];
-                            if (v.includes('%') && res.win_rate === 'N/A') {
-                                const pct = getPct(v);
-                                if (pct !== null) res.win_rate = pct;
-                            }
-                            if (v.includes('/') && res.trades === 'N/A') {
-                                const parts = v.split(' ');
-                                for (const p of parts) {
-                                    if (p.includes('/')) {
-                                        const total = p.split('/').pop();
-                                        if (total && total.length > 0 && !isNaN(total)) { res.trades = total; break; }
-                                    }
-                                }
-                            }
-                            if (res.win_rate !== 'N/A' && res.trades !== 'N/A') break;
-                        }
-                    }
-                }
-            }
-            return res;
-        }
-    """)
-    return result
+    def get_pct(v):
+        for p in v.split():
+            if "%" in p:
+                return p.replace("%", "").replace(",", ".").replace("\u2212", "-").replace("−", "-").strip()
+        return None
+
+    for i, line in enumerate(lines):
+        if res["net_profit"] == "N/A" and ("Total PnL" in line or "Toplam K" in line):
+            for o in range(1, 6):
+                if i + o >= len(lines): break
+                pct = get_pct(lines[i + o])
+                if pct: res["net_profit"] = pct; break
+
+        if res["max_drawdown"] == "N/A" and ("Max drawdown" in line or "Maksimum" in line):
+            for o in range(1, 6):
+                if i + o >= len(lines): break
+                pct = get_pct(lines[i + o])
+                if pct: res["max_drawdown"] = pct; break
+
+        if (res["win_rate"] == "N/A" or res["trades"] == "N/A") and ("Karlı işlemler" in line or "Percent" in line):
+            for o in range(1, 7):
+                if i + o >= len(lines): break
+                v = lines[i + o]
+                if "%" in v and res["win_rate"] == "N/A":
+                    pct = get_pct(v)
+                    if pct: res["win_rate"] = pct
+                if "/" in v and res["trades"] == "N/A":
+                    for p in v.split():
+                        if "/" in p:
+                            total = p.split("/")[-1].strip()
+                            if total.isdigit(): res["trades"] = total; break
+                if res["win_rate"] != "N/A" and res["trades"] != "N/A": break
+
+    return res
 
 def save_csv(data):
     if not data:
@@ -237,6 +227,17 @@ async def main():
                 if loaded:
                     await set_all_history(page)
                     await asyncio.sleep(3)
+                    # "Raporu güncelle" butonu çıkarsa tıkla
+                    for btn_text in ['Raporu güncelle', 'Update report', 'Recalculate']:
+                        try:
+                            btn = page.get_by_text(btn_text, exact=True)
+                            if await btn.count() > 0:
+                                await btn.first.click(timeout=3000)
+                                print(f'  "{btn_text}" tıklandı ✅')
+                                await asyncio.sleep(3)
+                                break
+                        except:
+                            continue
                     await wait_for_report(page, "(tüm geçmiş)")
 
                 if i == 0:
