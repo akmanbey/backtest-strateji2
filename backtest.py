@@ -102,23 +102,53 @@ async def set_all_history(page):
         print("  ⚠️ Tarih butonu bulunamadı")
         return
 
-    # Dropdown'dan "Tüm geçmiş" seç
+    # Dropdown'dan "Tüm geçmiş" seç — sadece görünür (visible) elementlere bak
     result = await page.evaluate("""
         () => {
-            // Dropdown açık olmalı — tüm görünür elementleri tara
             const targets = ['Tüm geçmiş', 'Tüm Geçmiş', 'All history', 'All History'];
-            const allEls = document.querySelectorAll('li, [role="option"], [role="menuitem"], div[class*="item"], div[class*="menu"] div');
+
+            // Görünür olan elementleri filtrele
+            function isVisible(el) {
+                const r = el.getBoundingClientRect();
+                return r.width > 0 && r.height > 0 && r.top >= 0 && r.top < window.innerHeight;
+            }
+
+            // Önce popup/overlay/dropdown container'larını ara
+            const popupSels = [
+                '[class*="popup"]', '[class*="dropdown"]', '[class*="menu"]',
+                '[class*="overlay"]', '[class*="dialog"]', '[role="listbox"]',
+                '[class*="dateRange"]', '[class*="period"]'
+            ];
+            for (const sel of popupSels) {
+                const containers = document.querySelectorAll(sel);
+                for (const container of containers) {
+                    if (!isVisible(container)) continue;
+                    const items = container.querySelectorAll('li, div, span, button');
+                    for (const item of items) {
+                        if (!isVisible(item)) continue;
+                        const t = (item.innerText || '').trim();
+                        if (targets.includes(t)) {
+                            item.click();
+                            return 'OK: ' + t;
+                        }
+                    }
+                }
+            }
+
+            // Fallback: tüm visible li/option elementleri
             const texts = [];
+            const allEls = document.querySelectorAll('li, [role="option"], [role="menuitem"]');
             for (const el of allEls) {
+                if (!isVisible(el)) continue;
                 const t = (el.innerText || '').trim();
+                if (t.length === 0 || t.length > 50) continue;
                 texts.push(t);
                 if (targets.includes(t)) {
                     el.click();
-                    return 'OK: ' + t;
+                    return 'OK-fallback: ' + t;
                 }
             }
-            // İlk 20 item'ı debug için döndür
-            return 'MISS: ' + JSON.stringify(texts.filter(t => t.length > 0 && t.length < 40).slice(0, 20));
+            return 'MISS: ' + JSON.stringify(texts.slice(0, 15));
         }
     """)
     await asyncio.sleep(2)
