@@ -63,49 +63,48 @@ async def wait_for_report(page, label=""):
 
 async def set_all_history(page):
     """
-    Tarih butonunu bul ve tıkla, dropdown'dan 'Tüm geçmiş' seç.
-    Buton yapısı: [takvim ikonu] [tarih metni] [chevron ▼]
-    Dropdown'ı açan şey butonun tamamına veya chevron'a tıklamak.
+    Tarih butonunu bul, dispatch events ile tıkla, dropdown'dan 'Tüm geçmiş' seç.
     """
-    # Tarih butonunu koordinatlarıyla tıkla — Playwright locator yerine
-    # direkt JS ile butonun bounding rect'ini al ve mouse click simüle et
-    btn_info = await page.evaluate("""
+    # Butonu bul ve dispatch ile tıkla (tooltip değil dropdown açmak için)
+    clicked = await page.evaluate("""
         () => {
+            function dispatch(el) {
+                el.dispatchEvent(new MouseEvent('mousedown', {bubbles:true, cancelable:true}));
+                el.dispatchEvent(new MouseEvent('mouseup',   {bubbles:true, cancelable:true}));
+                el.dispatchEvent(new MouseEvent('click',     {bubbles:true, cancelable:true}));
+            }
             const panels = document.querySelectorAll('[class*="backtesting"], [class*="strategyReport"], [class*="report"]');
             for (const panel of panels) {
                 const btns = panel.querySelectorAll('button');
                 for (const btn of btns) {
                     const t = btn.innerText || '';
-                    if (('\u2014' in t || t.includes('\u2014') || t.includes('—')) && /\d{4}/.test(t) && t.length < 80) {
-                        const r = btn.getBoundingClientRect();
-                        return {x: r.left + r.width - 10, y: r.top + r.height/2, text: t.trim()};
+                    if (t.includes('\u2014') && /\d{4}/.test(t) && t.length < 80) {
+                        dispatch(btn);
+                        return t.trim().slice(0, 50);
                     }
                 }
             }
-            // Fallback: tüm butonlar
+            // Fallback
             const allBtns = document.querySelectorAll('button');
             for (const btn of allBtns) {
                 const t = btn.innerText || '';
-                if (t.includes('—') && /\d{4}/.test(t) && t.length < 80) {
-                    const r = btn.getBoundingClientRect();
-                    return {x: r.left + r.width - 10, y: r.top + r.height/2, text: t.trim()};
+                if (t.includes('\u2014') && /\d{4}/.test(t) && t.length < 80) {
+                    dispatch(btn);
+                    return t.trim().slice(0, 50);
                 }
             }
             return null;
         }
     """)
 
-    if not btn_info:
+    if not clicked:
         print("  ⚠️ Tarih butonu bulunamadı")
         return
 
-    print(f"  Tarih butonu: {btn_info['text'][:50]}")
-
-    # Mouse ile koordinata tıkla — chevron kısmına (sağ taraf)
-    await page.mouse.click(btn_info['x'], btn_info['y'])
+    print(f"  Tarih butonu dispatch edildi: {clicked}")
     await asyncio.sleep(2)
 
-    # Dropdown açıldıysa "Tüm geçmiş" seç
+    # Dropdown'dan "Tüm geçmiş" seç
     targets = ['Tüm geçmiş', 'Tüm Geçmiş', 'All history', 'All History']
     for target in targets:
         try:
@@ -118,17 +117,17 @@ async def set_all_history(page):
         except:
             continue
 
-    # Fallback: görünür li elementlerini tara
+    # Görünür li elementleri
+    found_texts = []
     try:
         lis = page.locator('li')
         n = await lis.count()
-        found_texts = []
         for idx in range(n):
             li = lis.nth(idx)
             try:
                 t = (await li.inner_text(timeout=500)).strip()
                 if t:
-                    found_texts.append(t)
+                    found_texts.append(t[:30])
                 if t in targets:
                     await li.click(timeout=2000)
                     await asyncio.sleep(2)
@@ -136,10 +135,10 @@ async def set_all_history(page):
                     return
             except:
                 continue
-        print(f"  ⚠️ Tüm geçmiş bulunamadı. Görünür li'ler: {found_texts[:10]}")
     except:
         pass
 
+    print(f"  ⚠️ Dropdown açılmadı. li'ler: {found_texts[:8]}")
     await page.keyboard.press("Escape")
     await asyncio.sleep(0.5)
 
