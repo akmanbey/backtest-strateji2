@@ -217,16 +217,54 @@ async def main():
         except:
             print("Strategy Tester zaten açık")
 
+        # Daha önce kaydedilen sonuçları yükle (resume)
+        done_symbols = set()
+        if os.path.exists(OUTPUT_FILE):
+            try:
+                import csv as csv_mod
+                with open(OUTPUT_FILE, newline="", encoding="utf-8-sig") as f:
+                    for row in csv_mod.DictReader(f):
+                        if row.get("Net Kar %") not in ("N/A", "HATA", ""):
+                            done_symbols.add(row["Sembol"])
+                            all_results.append(row)
+                print(f"Resume: {len(done_symbols)} sembol zaten tamamlanmış, atlanıyor")
+            except:
+                pass
+
+        import time
+        start_time = time.time()
+
         for i, symbol in enumerate(symbols):
             clean = symbol.replace("BINANCE:", "").replace("OKX:", "").replace(".P", "")
+
+            # Zaten tamamlananları atla
+            if clean in done_symbols:
+                print(f"[{i+1}/{len(symbols)}] {clean} - atlandı (zaten var)")
+                continue
+
             print(f"\n[{i+1}/{len(symbols)}] {clean}")
+
+            # Her 45 dakikada bir sayfayı yenile — session taze kalsın
+            elapsed = time.time() - start_time
+            if elapsed > 45 * 60:
+                print("  ⏰ 45 dk geçti, sayfa yenileniyor...")
+                await page.goto(CHART_URL, wait_until="domcontentloaded", timeout=60000)
+                await asyncio.sleep(15)
+                try:
+                    await page.click('[data-name="backtesting"]', timeout=5000)
+                    await asyncio.sleep(3)
+                except:
+                    pass
+                start_time = time.time()
+                print("  Sayfa yenilendi ✅")
+
             try:
                 await change_symbol(page, symbol)
                 loaded = await wait_for_report(page, "(ilk yükleme)")
 
                 if loaded:
                     await set_all_history(page)
-                    await asyncio.sleep(3)
+                    await asyncio.sleep(2)
                     # "Raporu güncelle" butonu çıkarsa tıkla
                     for btn_text in ['Raporu güncelle', 'Update report', 'Recalculate']:
                         try:
@@ -234,14 +272,12 @@ async def main():
                             if await btn.count() > 0:
                                 await btn.first.click(timeout=3000)
                                 print(f'  "{btn_text}" tıklandı ✅')
-                                await asyncio.sleep(3)
                                 break
                         except:
                             continue
+                    # Rapor güncellensin — "Key stats" kaybolup tekrar gelene kadar bekle
+                    await asyncio.sleep(2)
                     await wait_for_report(page, "(tüm geçmiş)")
-
-                if i == 0:
-                    await page.screenshot(path="results/backtest_data.png")
 
                 res = await get_report_values(page)
                 all_results.append({
