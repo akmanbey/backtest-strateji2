@@ -42,11 +42,21 @@ async def login(context):
     print("Cookie eklendi ✅")
 
 async def wait_for_report(page):
-    """Raporun hesaplanmasını bekle."""
+    """Raporun hesaplanmasını bekle — önce hata mesajının kaybolmasını bekle."""
+    # Önce "işlem verileri gerekir" mesajı varsa kaybolsun
+    try:
+        await page.wait_for_selector(
+            'text="Bu rapor için işlem verileri gerekir"',
+            state="hidden",
+            timeout=15000
+        )
+    except:
+        pass
+    # Rapor güncelleniyorsa bitsin
     try:
         await page.wait_for_selector(
             'text="Rapor güncelleniyor"',
-            timeout=5000
+            timeout=8000
         )
         print("  Rapor hesaplanıyor...")
         await page.wait_for_selector(
@@ -56,7 +66,15 @@ async def wait_for_report(page):
         )
         print("  Rapor hazır ✅")
     except:
-        await asyncio.sleep(4)
+        await asyncio.sleep(5)
+    # Key stats görünene kadar bekle
+    try:
+        await page.wait_for_selector(
+            'text="Key stats", text="Total PnL"',
+            timeout=10000
+        )
+    except:
+        await asyncio.sleep(2)
 
 async def set_all_history(page):
     """
@@ -174,7 +192,7 @@ async def change_symbol(page, symbol):
         await page.keyboard.type(search_term, delay=40)
         await asyncio.sleep(1.5)
         await page.keyboard.press("Enter")
-        await asyncio.sleep(3)
+        await asyncio.sleep(5)  # Sembol değişince rapor resetlenir, biraz bekle
     except Exception as e:
         print(f"  Sembol hatası: {e}")
 
@@ -298,7 +316,11 @@ async def get_results(page, symbol_idx):
         "trades":       "N/A"
     }
     try:
+        # 1) Önce raporun ilk yüklenmesini bekle
+        await wait_for_report(page)
+        # 2) Tarih aralığını "Tüm geçmiş" yap
         await set_all_history(page)
+        # 3) Tarih değişince rapor yeniden hesaplanır, tekrar bekle
         await wait_for_report(page)
 
         text = await get_report_text(page)
