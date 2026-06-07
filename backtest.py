@@ -422,6 +422,31 @@ async def main():
                 # Rapor yüklensin
                 loaded = await wait_for_report(page, "(ilk yükleme)")
 
+                # İlk sembolde buton DOM'unu dump et
+                if i == 0:
+                    btn_dump = await page.evaluate("""
+                        () => {
+                            const panels = document.querySelectorAll('[class*="backtesting"], [class*="strategyReport"], [class*="report"]');
+                            const result = [];
+                            for (const panel of panels) {
+                                for (const btn of panel.querySelectorAll('button')) {
+                                    const r = btn.getBoundingClientRect();
+                                    result.push({
+                                        text: (btn.innerText||'').trim().slice(0,60),
+                                        cls: btn.className.slice(0,80),
+                                        dn: btn.getAttribute('data-name')||'',
+                                        x: Math.round(r.left), y: Math.round(r.top),
+                                        w: Math.round(r.width), h: Math.round(r.height)
+                                    });
+                                }
+                            }
+                            return result;
+                        }
+                    """)
+                    print(f"  [DOM] Panel butonları:")
+                    for b in btn_dump:
+                        print(f"    '{b['text']}' | cls={b['cls'][:50]} | dn={b['dn']} | ({b['x']},{b['y']}) {b['w']}x{b['h']}")
+
                 if loaded:
                     # Tüm geçmişi seç
                     await set_all_history(page)
