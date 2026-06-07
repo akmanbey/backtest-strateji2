@@ -145,20 +145,23 @@ async def set_all_history(page):
         except:
             continue
 
-    # 3) JS fallback — dropdown içinde metne göre tıkla
+    # 3) JS fallback — dropdown içinde metne göre tıkla + debug
     try:
-        await page.evaluate("""
+        result = await page.evaluate("""
             () => {
                 const keywords = ['Tüm geçmiş', 'Tüm Geçmiş', 'All history', 'All History', 'Max', 'All', 'Tümü'];
-                const allEls = Array.from(document.querySelectorAll('[role="option"], [role="menuitem"], li, div'));
+                const allEls = Array.from(document.querySelectorAll('[role="option"], [role="menuitem"], li'));
+                // Debug: tüm dropdown item metinlerini döndür
+                const itemTexts = allEls.map(e => e.innerText ? e.innerText.trim() : '').filter(t => t.length > 0 && t.length < 50);
                 for (const kw of keywords) {
                     const el = allEls.find(e => e.innerText && e.innerText.trim() === kw);
-                    if (el) { el.click(); return; }
+                    if (el) { el.click(); return 'Seçildi: ' + kw; }
                 }
+                return 'Bulunamadı. Mevcut itemlar: ' + JSON.stringify(itemTexts.slice(0, 15));
             }
         """)
         await asyncio.sleep(2)
-        print("  Tüm geçmiş JS ile seçildi ✅")
+        print(f"  Dropdown JS sonucu: {result}")
     except Exception as e:
         print(f"  ⚠️ Tüm geçmiş seçilemedi: {e}")
 
@@ -251,29 +254,29 @@ async def parse_report(text):
                             break
 
         # ── Win Rate / Karlı işlemler ────────────────────────────────────
-        # Yeni UI: "Karlı işlemler" satırı, değer: "64,71% 22/34"
+        # Yeni UI: % ve X/Y ayrı satırlarda gelir: "60,00%" sonra "9/15"
         if res["win_rate"] == "N/A" or res["trades"] == "N/A":
             if any(k in line for k in ["Karlı işlemler", "Percent Profitable", "Kazanma oranı"]):
-                for offset in range(0, 4):
-                    if j + offset < len(lines):
-                        val = lines[j + offset]
-                        # "64,71% 22/34" formatı
-                        if "%" in val and "/" in val:
-                            parts = val.split()
-                            for part in parts:
-                                if "%" in part and res["win_rate"] == "N/A":
-                                    res["win_rate"] = clean_pct(part)
-                                if "/" in part and res["trades"] == "N/A":
-                                    # "22/34" → toplam = 34
-                                    total = part.split("/")[-1]
-                                    res["trades"] = total
-                            break
-                        # Sadece % (eski UI)
-                        if "%" in val and res["win_rate"] == "N/A":
-                            pct = [t for t in val.split() if "%" in t]
-                            if pct:
-                                res["win_rate"] = clean_pct(pct[0])
-                            break
+                for offset in range(1, 7):
+                    if j + offset >= len(lines):
+                        break
+                    val = lines[j + offset]
+                    if "%" in val and res["win_rate"] == "N/A":
+                        pct = [t for t in val.split() if "%" in t]
+                        if pct:
+                            res["win_rate"] = clean_pct(pct[0])
+                    if "/" in val and res["trades"] == "N/A":
+                        for part in val.split():
+                            if "/" in part:
+                                try:
+                                    total = part.split("/")[-1].strip()
+                                    if total.isdigit():
+                                        res["trades"] = total
+                                        break
+                                except:
+                                    pass
+                    if res["win_rate"] != "N/A" and res["trades"] != "N/A":
+                        break
 
         # ── Toplam İşlem (eski UI fallback) ─────────────────────────────
         if res["trades"] == "N/A":
