@@ -260,19 +260,13 @@ async def main():
 
             print(f"\n[{i+1}/{len(symbols)}] {clean}")
 
-            # Her 30 dakikada bir sayfayı yenile — session taze kalsın
+            # Her 30 dakikada bir cookie'yi yenile — sayfa yenileme yok, session taze kalsın
             elapsed = time.time() - start_time
             if elapsed > 30 * 60:
-                print("  ⏰ 45 dk geçti, sayfa yenileniyor...")
-                await page.goto(CHART_URL, wait_until="domcontentloaded", timeout=60000)
-                await asyncio.sleep(15)
-                try:
-                    await page.click('[data-name="backtesting"]', timeout=5000)
-                    await asyncio.sleep(3)
-                except:
-                    pass
+                print("  ⏰ 30 dk geçti, cookie yenileniyor...")
+                await login(context)
                 start_time = time.time()
-                print("  Sayfa yenilendi ✅")
+                print("  Cookie yenilendi ✅")
 
             try:
                 await change_symbol(page, symbol)
