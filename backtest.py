@@ -35,15 +35,31 @@ async def change_symbol(page, symbol):
         await page.keyboard.type(search_term, delay=40)
         await asyncio.sleep(1.5)
         await page.keyboard.press("Enter")
-        await asyncio.sleep(4)
+        await asyncio.sleep(3)
+        # Header'da doğru sembolün yüklendiğini doğrula
+        await wait_for_symbol(page, search_term)
         print(f"  Sembol: {search_term}")
     except Exception as e:
         print(f"  Sembol hatası: {e}")
 
+async def wait_for_symbol(page, symbol_name, timeout=15):
+    """Header'da doğru sembolün yüklendiğini doğrula."""
+    clean = symbol_name.replace("BINANCE:", "").replace("OKX:", "").replace(".P", "")
+    for _ in range(timeout):
+        try:
+            header = await page.evaluate("() => document.querySelector('#header-toolbar-symbol-search')?.innerText || ''")
+            if clean.upper() in header.upper():
+                return True
+        except:
+            pass
+        await asyncio.sleep(1)
+    print(f"  ⚠️ Header'da {clean} görünmedi")
+    return False
+
 async def wait_for_report(page, label=""):
     for selector in ['text="Key stats"', 'text="Total PnL"', 'text="Karlı işlemler"']:
         try:
-            await page.wait_for_selector(selector, timeout=20000)
+            await page.wait_for_selector(selector, timeout=30000)
             print(f"  Rapor yüklendi ✅ {label}")
             return True
         except:
@@ -244,9 +260,9 @@ async def main():
 
             print(f"\n[{i+1}/{len(symbols)}] {clean}")
 
-            # Her 45 dakikada bir sayfayı yenile — session taze kalsın
+            # Her 30 dakikada bir sayfayı yenile — session taze kalsın
             elapsed = time.time() - start_time
-            if elapsed > 45 * 60:
+            if elapsed > 30 * 60:
                 print("  ⏰ 45 dk geçti, sayfa yenileniyor...")
                 await page.goto(CHART_URL, wait_until="domcontentloaded", timeout=60000)
                 await asyncio.sleep(15)
@@ -279,12 +295,16 @@ async def main():
                     await asyncio.sleep(2)
                     await wait_for_report(page, "(tüm geçmiş)")
 
-                # Önceki sembolün değerinden farklı gelene kadar bekle (duplicate önleme)
-                prev_val = all_results[-1]["Net Kar %"] if all_results else None
+                # Duplicate önleme: önceki sembolle hem kar hem işlem sayısı aynıysa yeniden oku
+                prev_profit = all_results[-1]["Net Kar %"] if all_results else None
+                prev_trades = all_results[-1]["İşlem Sayısı"] if all_results else None
                 res = await get_report_values(page)
                 retry = 0
-                while res["net_profit"] != "N/A" and res["net_profit"] == prev_val and retry < 5:
-                    print(f"  ⏳ Duplicate tespit edildi ({res['net_profit']}), 3s bekleniyor...")
+                while (res["net_profit"] != "N/A" and
+                       res["net_profit"] == prev_profit and
+                       res["trades"] == prev_trades and
+                       retry < 6):
+                    print(f"  ⏳ Duplicate ({res['net_profit']}), 3s bekleniyor... ({retry+1}/6)")
                     await asyncio.sleep(3)
                     res = await get_report_values(page)
                     retry += 1
