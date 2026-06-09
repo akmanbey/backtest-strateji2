@@ -313,13 +313,26 @@ async def main():
 
             print(f"\n[{i+1}/{len(symbols)}] {clean}")
 
-            # Her 30 dakikada bir cookie'yi yenile — sayfa yenileme yok, session taze kalsın
+            # Her 55 dakikada bir kaydet ve sayfayı yenile
             elapsed = time.time() - start_time
-            if elapsed > 30 * 60:
-                print("  ⏰ 30 dk geçti, cookie yenileniyor...")
-                await login(context)
+            if elapsed > 55 * 60:
+                print("  ⏰ 55 dk geçti, kaydedip yenileniyor...")
+                # Önce kaydet
+                await page.keyboard.press("Control+s")
+                await asyncio.sleep(3)
+                # Sonra yenile
+                await page.reload(wait_until="domcontentloaded", timeout=60000)
+                await asyncio.sleep(20)
+                # Strateji tester açık geldi mi kontrol et
+                try:
+                    await page.click('[data-name="backtesting"]', timeout=5000)
+                    await asyncio.sleep(3)
+                except:
+                    pass
+                # Key stats görünene kadar bekle
+                await wait_for_report(page, "(sayfa yenileme sonrası)")
                 start_time = time.time()
-                print("  Cookie yenilendi ✅")
+                print("  Sayfa yenilendi ✅")
 
             try:
                 await change_symbol(page, symbol)
@@ -342,8 +355,20 @@ async def main():
                             continue
                     # Tarih aralığı değişene kadar bekle
                     await wait_for_new_report(page, prev_trades, "(tüm geçmiş)")
+                    await asyncio.sleep(2)  # Rapor render tamamlansın
 
                 res = await get_report_values(page)
+
+                # Gerçekten sinyal yok mu yoksa timeout mu?
+                if res["net_profit"] == "N/A":
+                    try:
+                        body = await page.evaluate("() => document.body.innerText")
+                        if "işlem verileri gerekir" in body or "no trades" in body.lower():
+                            print(f"  ℹ️ Bu sembolde sinyal yok")
+                        else:
+                            print(f"  ⚠️ Veri okunamadı (timeout olabilir)")
+                    except:
+                        pass
 
                 all_results.append({
                     "Sembol":         clean,
