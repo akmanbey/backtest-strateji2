@@ -68,28 +68,47 @@ async def wait_for_report(page, label=""):
     return False
 
 async def wait_for_new_report(page, prev_trades, label=""):
-    """Rapordaki işlem sayısının öncekinden farklı olmasını bekle."""
-    for _ in range(20):
+    """
+    'Rapor güncelleniyor' yazısı çıkıp kaybolana kadar bekle.
+    Çıkmazsa 'Rapor güncel değil' yazısının kaybolmasını bekle.
+    """
+    # Önce "Rapor güncelleniyor" çıkıyor mu bekle (max 8 saniye)
+    updating = False
+    for _ in range(8):
         try:
-            for sel in ['[class*="backtesting"]', '[class*="strategyReport"]']:
-                el = page.locator(sel).first
-                if await el.count() > 0:
-                    t = await el.inner_text()
-                    if "Key stats" in t or "Total PnL" in t:
-                        # İşlem sayısı değiştiyse yeni rapor yüklendi
-                        lines = [l.strip() for l in t.split("\n") if l.strip()]
-                        for i, line in enumerate(lines):
-                            if "/" in line:
-                                for p in line.split():
-                                    if "/" in p:
-                                        total = p.split("/")[-1].strip()
-                                        if total.isdigit() and total != str(prev_trades):
-                                            print(f"  Yeni rapor yüklendi ✅ {label}")
-                                            return True
+            text = await page.evaluate("() => document.body.innerText")
+            if "Rapor güncelleniyor" in text or "Updating" in text:
+                updating = True
+                break
         except:
             pass
         await asyncio.sleep(1)
-    print(f"  ⚠️ Yeni rapor gelmedi {label}")
+
+    if updating:
+        print(f"  Rapor hesaplanıyor...")
+        # Güncellenme bitene kadar bekle
+        for _ in range(60):
+            await asyncio.sleep(1)
+            try:
+                text = await page.evaluate("() => document.body.innerText")
+                if "Rapor güncelleniyor" not in text and "Updating" not in text:
+                    print(f"  Yeni rapor yüklendi ✅ {label}")
+                    return True
+            except:
+                pass
+    else:
+        # "Rapor güncel değil" kaybolana kadar bekle
+        for _ in range(15):
+            await asyncio.sleep(1)
+            try:
+                text = await page.evaluate("() => document.body.innerText")
+                if "Rapor güncel değil" not in text and "not up to date" not in text.lower():
+                    print(f"  Rapor hazır ✅ {label}")
+                    return True
+            except:
+                pass
+
+    print(f"  ⚠️ Rapor beklenemedi {label}")
     return False
     for selector in ['text="Key stats"', 'text="Total PnL"', 'text="Karlı işlemler"']:
         try:
@@ -321,7 +340,7 @@ async def main():
                                 break
                         except:
                             continue
-                    # Önceki işlem sayısından farklı gelene kadar bekle
+                    # Tarih aralığı değişene kadar bekle
                     await wait_for_new_report(page, prev_trades, "(tüm geçmiş)")
 
                 res = await get_report_values(page)
