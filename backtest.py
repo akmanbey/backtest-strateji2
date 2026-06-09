@@ -56,7 +56,30 @@ async def wait_for_symbol(page, symbol_name, timeout=15):
     print(f"  ⚠️ Header'da {clean} görünmedi")
     return False
 
-async def wait_for_report(page, label=""):
+async def wait_for_new_report(page, prev_trades, label=""):
+    """Rapordaki işlem sayısının öncekinden farklı olmasını bekle."""
+    for _ in range(20):
+        try:
+            for sel in ['[class*="backtesting"]', '[class*="strategyReport"]']:
+                el = page.locator(sel).first
+                if await el.count() > 0:
+                    t = await el.inner_text()
+                    if "Key stats" in t or "Total PnL" in t:
+                        # İşlem sayısı değiştiyse yeni rapor yüklendi
+                        lines = [l.strip() for l in t.split("\n") if l.strip()]
+                        for i, line in enumerate(lines):
+                            if "/" in line:
+                                for p in line.split():
+                                    if "/" in p:
+                                        total = p.split("/")[-1].strip()
+                                        if total.isdigit() and total != str(prev_trades):
+                                            print(f"  Yeni rapor yüklendi ✅ {label}")
+                                            return True
+        except:
+            pass
+        await asyncio.sleep(1)
+    print(f"  ⚠️ Yeni rapor gelmedi {label}")
+    return False
     for selector in ['text="Key stats"', 'text="Total PnL"', 'text="Karlı işlemler"']:
         try:
             await page.wait_for_selector(selector, timeout=30000)
@@ -273,6 +296,8 @@ async def main():
                 loaded = await wait_for_report(page, "(ilk yükleme)")
 
                 if loaded:
+                    # Tüm geçmişi seç
+                    prev_trades = all_results[-1]["İşlem Sayısı"] if all_results else None
                     await set_all_history(page)
                     await asyncio.sleep(2)
                     # "Raporu güncelle" butonu çıkarsa tıkla
@@ -285,23 +310,10 @@ async def main():
                                 break
                         except:
                             continue
-                    # Rapor güncellensin — "Key stats" kaybolup tekrar gelene kadar bekle
-                    await asyncio.sleep(2)
-                    await wait_for_report(page, "(tüm geçmiş)")
+                    # Önceki işlem sayısından farklı gelene kadar bekle
+                    await wait_for_new_report(page, prev_trades, "(tüm geçmiş)")
 
-                # Duplicate önleme: önceki sembolle hem kar hem işlem sayısı aynıysa yeniden oku
-                prev_profit = all_results[-1]["Net Kar %"] if all_results else None
-                prev_trades = all_results[-1]["İşlem Sayısı"] if all_results else None
                 res = await get_report_values(page)
-                retry = 0
-                while (res["net_profit"] != "N/A" and
-                       res["net_profit"] == prev_profit and
-                       res["trades"] == prev_trades and
-                       retry < 6):
-                    print(f"  ⏳ Duplicate ({res['net_profit']}), 3s bekleniyor... ({retry+1}/6)")
-                    await asyncio.sleep(3)
-                    res = await get_report_values(page)
-                    retry += 1
 
                 all_results.append({
                     "Sembol":         clean,
