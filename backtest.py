@@ -56,6 +56,17 @@ async def wait_for_symbol(page, symbol_name, timeout=15):
     print(f"  ⚠️ Header'da {clean} görünmedi")
     return False
 
+async def wait_for_report(page, label=""):
+    for selector in ['text="Key stats"', 'text="Total PnL"', 'text="Karlı işlemler"']:
+        try:
+            await page.wait_for_selector(selector, timeout=30000)
+            print(f"  Rapor yüklendi ✅ {label}")
+            return True
+        except:
+            continue
+    print(f"  ⚠️ Rapor yüklenemedi {label}")
+    return False
+
 async def wait_for_new_report(page, prev_trades, label=""):
     """Rapordaki işlem sayısının öncekinden farklı olmasını bekle."""
     for _ in range(20):
