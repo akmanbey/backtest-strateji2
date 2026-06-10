@@ -36,14 +36,12 @@ async def change_symbol(page, symbol):
         await asyncio.sleep(1.5)
         await page.keyboard.press("Enter")
         await asyncio.sleep(3)
-        # Header'da doğru sembolün yüklendiğini doğrula
         await wait_for_symbol(page, search_term)
         print(f"  Sembol: {search_term}")
     except Exception as e:
         print(f"  Sembol hatası: {e}")
 
 async def wait_for_symbol(page, symbol_name, timeout=15):
-    """Header'da doğru sembolün yüklendiğini doğrula."""
     clean = symbol_name.replace("BINANCE:", "").replace("OKX:", "").replace(".P", "")
     for _ in range(timeout):
         try:
@@ -68,10 +66,6 @@ async def wait_for_report(page, label=""):
     return False
 
 async def wait_for_new_report(page, prev_trades, label=""):
-    """
-    'Rapor güncelleniyor' yazısı çıkıp kaybolana kadar bekle.
-    Çıkmazsa 'Rapor güncel değil' yazısının kaybolmasını bekle.
-    """
     # Önce "Rapor güncelleniyor" çıkıyor mu bekle (max 8 saniye)
     updating = False
     for _ in range(8):
@@ -86,7 +80,6 @@ async def wait_for_new_report(page, prev_trades, label=""):
 
     if updating:
         print(f"  Rapor hesaplanıyor...")
-        # Güncellenme bitene kadar bekle
         for _ in range(60):
             await asyncio.sleep(1)
             try:
@@ -97,8 +90,8 @@ async def wait_for_new_report(page, prev_trades, label=""):
             except:
                 pass
     else:
-        # "Rapor güncel değil" kaybolana kadar bekle
-        for _ in range(15):
+        # "Rapor güncel değil" kaybolana kadar bekle — 15'ten 30'a çıkarıldı
+        for _ in range(30):
             await asyncio.sleep(1)
             try:
                 text = await page.evaluate("() => document.body.innerText")
@@ -110,20 +103,8 @@ async def wait_for_new_report(page, prev_trades, label=""):
 
     print(f"  ⚠️ Rapor beklenemedi {label}")
     return False
-    for selector in ['text="Key stats"', 'text="Total PnL"', 'text="Karlı işlemler"']:
-        try:
-            await page.wait_for_selector(selector, timeout=30000)
-            print(f"  Rapor yüklendi ✅ {label}")
-            return True
-        except:
-            continue
-    print(f"  ⚠️ Rapor yüklenemedi {label}")
-    return False
 
 async def set_all_history(page):
-    """
-    activeArea class'lı tarih elementini bul, tıkla, Tüm geçmiş seç.
-    """
     btn_info = await page.evaluate(
         """() => {
             const els = document.querySelectorAll('[class*="activeArea"]');
@@ -151,7 +132,6 @@ async def set_all_history(page):
     await page.mouse.click(btn_info['x'], btn_info['y'])
     await asyncio.sleep(2)
 
-    # Dropdown'dan Tüm geçmiş seç
     targets = ['Tüm geçmiş', 'Tüm Geçmiş', 'All history', 'All History']
     for target in targets:
         try:
@@ -164,7 +144,6 @@ async def set_all_history(page):
         except:
             continue
 
-    # Görünür li elementleri
     found_texts = []
     try:
         lis = page.locator('li')
@@ -190,7 +169,6 @@ async def set_all_history(page):
     await asyncio.sleep(0.5)
 
 async def get_report_values(page):
-    # Panelin innerText'ini Python'a al, parse et
     text = None
     for sel in ['[class*="backtesting"]', '[class*="strategyReport"]', '[class*="report"]']:
         try:
@@ -286,7 +264,6 @@ async def main():
         except:
             print("Strategy Tester zaten açık")
 
-        # Daha önce kaydedilen sonuçları yükle (resume)
         done_symbols = set()
         if os.path.exists(OUTPUT_FILE):
             try:
@@ -306,30 +283,24 @@ async def main():
         for i, symbol in enumerate(symbols):
             clean = symbol.replace("BINANCE:", "").replace("OKX:", "").replace(".P", "")
 
-            # Zaten tamamlananları atla
             if clean in done_symbols:
                 print(f"[{i+1}/{len(symbols)}] {clean} - atlandı (zaten var)")
                 continue
 
             print(f"\n[{i+1}/{len(symbols)}] {clean}")
 
-            # Her 55 dakikada bir kaydet ve sayfayı yenile
             elapsed = time.time() - start_time
             if elapsed > 55 * 60:
                 print("  ⏰ 55 dk geçti, kaydedip yenileniyor...")
-                # Önce kaydet
                 await page.keyboard.press("Control+s")
                 await asyncio.sleep(3)
-                # Sonra yenile
                 await page.reload(wait_until="domcontentloaded", timeout=60000)
                 await asyncio.sleep(20)
-                # Strateji tester açık geldi mi kontrol et
                 try:
                     await page.click('[data-name="backtesting"]', timeout=5000)
                     await asyncio.sleep(3)
                 except:
                     pass
-                # Key stats görünene kadar bekle
                 await wait_for_report(page, "(sayfa yenileme sonrası)")
                 start_time = time.time()
                 print("  Sayfa yenilendi ✅")
@@ -339,11 +310,10 @@ async def main():
                 loaded = await wait_for_report(page, "(ilk yükleme)")
 
                 if loaded:
-                    # Tüm geçmişi seç
                     prev_trades = all_results[-1]["İşlem Sayısı"] if all_results else None
                     await set_all_history(page)
-                    await asyncio.sleep(2)
-                    # "Raporu güncelle" butonu çıkarsa tıkla
+                    await asyncio.sleep(5)  # 2 → 5
+
                     for btn_text in ['Raporu güncelle', 'Update report', 'Recalculate']:
                         try:
                             btn = page.get_by_text(btn_text, exact=True)
@@ -353,13 +323,12 @@ async def main():
                                 break
                         except:
                             continue
-                    # Tarih aralığı değişene kadar bekle
+
                     await wait_for_new_report(page, prev_trades, "(tüm geçmiş)")
-                    await asyncio.sleep(2)  # Rapor render tamamlansın
+                    await asyncio.sleep(5)  # 2 → 5
 
                 res = await get_report_values(page)
 
-                # Gerçekten sinyal yok mu yoksa timeout mu?
                 if res["net_profit"] == "N/A":
                     try:
                         body = await page.evaluate("() => document.body.innerText")
