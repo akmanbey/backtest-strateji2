@@ -84,7 +84,13 @@ async def set_all_history(page):
 
 async def get_report_values(page):
     text = await page.evaluate("() => document.body.innerText")
-    res = {"net_profit": "N/A", "max_drawdown": "N/A", "win_rate": "N/A", "trades": "N/A"}
+    res = {
+        "net_profit":    "N/A",
+        "max_drawdown":  "N/A",
+        "win_rate":      "N/A",
+        "trades":        "N/A",
+        "profit_factor": "N/A",
+    }
     lines = [l.strip() for l in text.split("\n") if l.strip()]
 
     def get_pct(v):
@@ -99,11 +105,13 @@ async def get_report_values(page):
                 if i+o >= len(lines): break
                 pct = get_pct(lines[i+o])
                 if pct: res["net_profit"] = pct; break
+
         if res["max_drawdown"] == "N/A" and ("Max drawdown" in line or "Maksimum" in line):
             for o in range(1, 6):
                 if i+o >= len(lines): break
                 pct = get_pct(lines[i+o])
                 if pct: res["max_drawdown"] = pct; break
+
         if (res["win_rate"] == "N/A" or res["trades"] == "N/A") and ("Karlı işlemler" in line or "Percent" in line):
             for o in range(1, 7):
                 if i+o >= len(lines): break
@@ -117,6 +125,18 @@ async def get_report_values(page):
                             total = part.split("/")[-1].strip()
                             if total.isdigit(): res["trades"] = total; break
                 if res["win_rate"] != "N/A" and res["trades"] != "N/A": break
+
+        if res["profit_factor"] == "N/A" and ("Kar faktörü" in line or "Profit factor" in line):
+            for o in range(1, 6):
+                if i+o >= len(lines): break
+                v = lines[i+o].replace(",", ".")
+                try:
+                    float(v)
+                    res["profit_factor"] = v
+                    break
+                except:
+                    continue
+
     return res
 
 def save_csv(data):
@@ -198,19 +218,23 @@ async def main():
                     await asyncio.sleep(5)
                     res = await get_report_values(page)
                     all_results.append({
-                        "Sembol":         clean,
-                        "Net Kar %":      res["net_profit"],
-                        "Max Drawdown %": res["max_drawdown"],
-                        "Win Rate %":     res["win_rate"],
-                        "İşlem Sayısı":   res["trades"],
+                        "Sembol":          clean,
+                        "Net Kar %":       res["net_profit"],
+                        "Max Drawdown %":  res["max_drawdown"],
+                        "Win Rate %":      res["win_rate"],
+                        "İşlem Sayısı":    res["trades"],
+                        "Kar Faktörü":     res["profit_factor"],
                     })
-                    print(f"  ✅ Kar:{res['net_profit']} DD:{res['max_drawdown']} Win:{res['win_rate']} İşlem:{res['trades']}")
+                    print(f"  ✅ Kar:{res['net_profit']} DD:{res['max_drawdown']} Win:{res['win_rate']} İşlem:{res['trades']} KF:{res['profit_factor']}")
             except Exception as e:
                 print(f"  ❌ {e}")
                 all_results.append({
-                    "Sembol": clean,
-                    "Net Kar %":"HATA","Max Drawdown %":"HATA",
-                    "Win Rate %":"HATA","İşlem Sayısı":"HATA",
+                    "Sembol":          clean,
+                    "Net Kar %":       "HATA",
+                    "Max Drawdown %":  "HATA",
+                    "Win Rate %":      "HATA",
+                    "İşlem Sayısı":    "HATA",
+                    "Kar Faktörü":     "HATA",
                 })
 
             if (i+1) % 20 == 0:
